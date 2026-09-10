@@ -2,11 +2,20 @@ import { Connection, PublicKey } from "@solana/web3.js";
 import type { ChainSample, PollHealth } from "../types";
 import { percentile } from "../audio/mapping";
 
-export const DEFAULT_RPC =
-  import.meta.env.VITE_RPC_URL?.trim() || "https://api.mainnet-beta.solana.com";
+// Official api.mainnet-beta.solana.com 403s browser Origins (GH Pages / localhost).
+// PublicNode answers those and still speaks confirmed mainnet.
+const BUILTIN_RPCS = [
+  "https://solana-rpc.publicnode.com",
+  "https://api.mainnet-beta.solana.com",
+];
 
-// Busy programs so getRecentPrioritizationFees actually moves.
-// Empty/unfiltered calls on public mainnet often come back as a pile of zeros.
+export const RPC_CANDIDATES = unique([
+  import.meta.env.VITE_RPC_URL?.trim(),
+  ...BUILTIN_RPCS,
+]);
+
+export const DEFAULT_RPC = RPC_CANDIDATES[0];
+
 const FEE_WATCH = [
   "11111111111111111111111111111111",
   "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
@@ -30,30 +39,35 @@ export type PollerHandlers = {
 };
 
 export class ChainPoller {
-  readonly connection: Connection;
+  readonly urls: string[];
+  private index = 0;
+  private connection: Connection;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private stopped = true;
-  private delayMs = 1400;
+  private delayMs = 1600;
   private lastSlot: number | null = null;
   private lastT = 0;
   private lastTps = 1800;
   private lastTxPerSlot = 500;
 
-  constructor(
-    readonly rpcUrl: string,
-    private readonly handlers: PollerHandlers,
-  ) {
-    this.connection = new Connection(rpcUrl, {
-      commitment: "confirmed",
-      disableRetryOnRateLimit: true,
-    });
+  constructor(urls: string | string[], private readonly handlers: PollerHandlers) {
+    this.urls = Array.isArray(urls) ? urls.filter(Boolean) : [urls];
+    this.connection = this.makeConnection(this.urls[0]);
+  }
+
+  get rpcUrl(): string {
+    return this.urls[this.index] ?? this.urls[0];
+  }
+
+  rpcHost(): string {
+    return hostOf(this.rpcUrl);
   }
 
   start(): void {
     if (!this.stopped) return;
     this.stopped = false;
-    this.delayMs = 1400;
-    this.handlers.onHealth("listening", "asking mainnet for a pulse…");
+    this.delayMs = 1600;
+    this.handlers.onHealth("listening", `asking ${this.rpcHost()} for a pulse…`);
     void this.tick();
   }
 
@@ -65,11 +79,32 @@ export class ChainPoller {
     }
   }
 
+  private makeConnection(url: string): Connection {
+    return new Connection(url, {
+      commitment: "confirmed",
+      disableRetryOnRateLimit: true,
+    });
+  }
+
   private schedule(): void {
     if (this.stopped) return;
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
     this.timer = setTimeout(() => {
+      this.timer = null;
       void this.tick();
     }, this.delayMs);
+  }
+
+  private rotate(reason: string): boolean {
+    if (this.index >= this.urls.length - 1) return false;
+    this.index += 1;
+    this.connection = this.makeConnection(this.rpcUrl);
+    this.delayMs = 1600;
+    this.handlers.onHealth("waiting", `${reason}; trying ${this.rpcHost()}`);
+    return true;
   }
 
   private async tick(): Promise<void> {
@@ -107,7 +142,7 @@ export class ChainPoller {
 
       this.lastSlot = slot;
       this.lastT = now;
-      this.delayMs = 1400;
+      this.delayMs = 1600;
       this.handlers.onHealth("ok", this.rpcHost());
       this.handlers.onSample({
         t: now,
@@ -121,25 +156,37 @@ export class ChainPoller {
         feePressure,
       });
     } catch (err) {
+      const forbidden = isForbidden(err);
+      if (forbidden && this.rotate("rpc blocked this origin")) {
+        return;
+      }
       const limited = isRateLimited(err);
-      this.delayMs = limited ? Math.min(this.delayMs * 2, 16000) : Math.min(this.delayMs + 800, 8000);
+      this.delayMs = limited || forbidden
+        ? Math.min(this.delayMs * 2, 16000)
+        : Math.min(this.delayMs + 800, 8000);
       this.handlers.onHealth(
-        limited ? "waiting" : "error",
+        limited || forbidden ? "waiting" : "error",
         limited
           ? `rpc asked us to wait (${Math.round(this.delayMs / 1000)}s)`
-          : formatErr(err),
+          : forbidden
+            ? `rpc blocked this origin (${this.rpcHost()})`
+            : formatErr(err),
       );
     } finally {
       this.schedule();
     }
   }
+}
 
-  private rpcHost(): string {
-    try {
-      return new URL(this.rpcUrl).host;
-    } catch {
-      return "rpc";
-    }
+function unique(values: Array<string | undefined>): string[] {
+  return [...new Set(values.filter((v): v is string => Boolean(v)))];
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "rpc";
   }
 }
 
@@ -148,7 +195,12 @@ function isRateLimited(err: unknown): boolean {
   return text.includes("429") || text.includes("too many") || text.includes("rate limit");
 }
 
+function isForbidden(err: unknown): boolean {
+  const text = formatErr(err).toLowerCase();
+  return text.includes("403") || text.includes("access forbidden") || text.includes("forbidden");
+}
+
 function formatErr(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  return String(err);
+  if (err instanceof Error) return err.message.slice(0, 180);
+  return String(err).slice(0, 180);
 }

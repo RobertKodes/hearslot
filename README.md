@@ -34,9 +34,9 @@ npm run preview
 
 ## RPC
 
-Default is the public endpoint: `https://api.mainnet-beta.solana.com`.
+Default is `https://solana-rpc.publicnode.com`. Official `api.mainnet-beta.solana.com` 403s browser Origins (this Pages site, localhost), so the bench starts on PublicNode and will hop if an endpoint blocks us. It also backs off on 429s.
 
-It rate-limits. The bench backs off and says so. If you have a free Helius / Triton / etc URL, drop it in:
+If you have a free Helius / Triton / etc URL, drop it in:
 
 ```bash
 cp .env.example .env

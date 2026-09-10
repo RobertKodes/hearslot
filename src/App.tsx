@@ -138,7 +138,7 @@ export default function App() {
         </button>
         {h.exportErr && <p className="err">{h.exportErr}</p>}
         <p className="rpc">
-          rpc {h.rpcHost} · set <code>VITE_RPC_URL</code> if the public one gets snippy
+          rpc {h.rpcHost} · official mainnet-beta 403s browsers; PublicNode or <code>VITE_RPC_URL</code>
         </p>
       </section>
     </div>

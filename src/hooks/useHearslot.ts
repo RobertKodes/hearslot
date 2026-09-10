@@ -1,9 +1,9 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { HearslotEngine } from "../audio/engine";
 import { renderHistoryWav } from "../audio/exportClip";
 import { sampleToParams } from "../audio/mapping";
 import { TimeRing } from "../buffer/ring";
-import { ChainPoller, DEFAULT_RPC } from "../solana/poller";
+import { ChainPoller, DEFAULT_RPC, RPC_CANDIDATES } from "../solana/poller";
 import type { AudioParams, BandId, ChainSample, MuteState, PollHealth } from "../types";
 
 const HISTORY_MS = 50_000;
@@ -24,6 +24,13 @@ export function useHearslot() {
   const [exporting, setExporting] = useState(false);
   const [exportErr, setExportErr] = useState<string | null>(null);
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
+  const [rpcHost, setRpcHost] = useState(() => {
+    try {
+      return new URL(DEFAULT_RPC).host;
+    } catch {
+      return DEFAULT_RPC;
+    }
+  });
   const mutesRef = useRef(mutes);
   mutesRef.current = mutes;
   const scrubRef = useRef(scrubFrac);
@@ -52,8 +59,9 @@ export function useHearslot() {
     await engine.resume();
     engine.setMutes(mutesRef.current);
 
-    const poller = new ChainPoller(DEFAULT_RPC, {
+    const poller = new ChainPoller(RPC_CANDIDATES, {
       onSample: (next) => {
+        setRpcHost(poller.rpcHost());
         const snap = ringRef.current.push(next);
         setHistory(snap);
         applyLive(next);
@@ -61,6 +69,7 @@ export function useHearslot() {
       onHealth: (h, text) => {
         setHealth(h);
         setNote(text);
+        setRpcHost(poller.rpcHost());
       },
     });
     pollerRef.current = poller;
@@ -129,14 +138,6 @@ export function useHearslot() {
       setExportErr(err instanceof Error ? err.message : String(err));
     } finally {
       setExporting(false);
-    }
-  }, []);
-
-  const rpcHost = useMemo(() => {
-    try {
-      return new URL(DEFAULT_RPC).host;
-    } catch {
-      return DEFAULT_RPC;
     }
   }, []);
 
