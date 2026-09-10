@@ -1,0 +1,50 @@
+:root {
+  color-scheme: dark;
+  --bg: #100f0b;
+  --panel: #1a1812;
+  --inset: #070806;
+  --line: #2d2a20;
+  --phosphor: #d6ff3e;
+  --amber: #ff9f1c;
+  --hot: #ff5a3c;
+  --dim: #8a836c;
+  --ink: #efe7cc;
+  --copper: #c47b3a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(1200px 600px at 80% -10%, rgba(196, 123, 58, 0.12), transparent 50%),
+    linear-gradient(180deg, #16140f, var(--bg) 40%);
+  color: var(--ink);
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+h1,
+.kicker,
+.arm-text,
+.panel-label,
+.band strong {
+  font-family: "Chakra Petch", "IBM Plex Mono", sans-serif;
+}
+
+code {
+  color: var(--phosphor);
+}
